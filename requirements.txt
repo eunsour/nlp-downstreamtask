@@ -1,0 +1,10 @@
+transformers[sentencepiece]
+tqdm
+wandb
+pandas
+datasets
+accelerate
+torch 
+torchvision 
+torchaudio 
+--find-links https://download.pytorch.org/whl/cu113
