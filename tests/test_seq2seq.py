@@ -1,7 +1,7 @@
 import pandas as pd
 import pytest
 
-from generations.seq2seq.seq2seq_model import Seq2SeqModel
+from generations.seq2seq import Seq2SeqModel
 
 
 @pytest.mark.parametrize(
@@ -20,8 +20,6 @@ from generations.seq2seq.seq2seq_model import Seq2SeqModel
         # ("flaubert", "flaubert-base-cased"),
     ],
 )
-
-
 def test_t5(model_type, model_name):
     train_data = [
         ["transliterate English to Korean", "transformer", "트랜스포머"],
@@ -40,7 +38,7 @@ def test_t5(model_type, model_name):
     eval_df = train_df.copy()
 
     model_args = {
-        "output_dir":'./outputs',
+        "output_dir": "./outputs",
         "reprocess_input_data": True,
         "overwrite_output_dir": True,
         "max_seq_length": 10,
@@ -49,7 +47,6 @@ def test_t5(model_type, model_name):
         "save_model_every_epoch": False,
         "max_length": 20,
         "num_beams": 1,
-        "no_cuda": True
     }
 
     # Create T5 Model
@@ -65,13 +62,10 @@ def test_t5(model_type, model_name):
     model.predict(["convert: four", "convert: five"])
 
     # Load test
-    model = Seq2SeqModel("t5", "outputs", args=model_args)
+    model = Seq2SeqModel(model_type, model_name, args=model_args)
 
     # Evaluate T5 Model on new task
     model.eval_model(eval_df)
 
     # Predict with trained T5 model
     model.predict(["convert: four", "convert: five"])
-
-if __name__ == "__main__":
-    test_t5()
