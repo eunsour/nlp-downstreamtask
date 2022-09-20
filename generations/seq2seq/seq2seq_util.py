@@ -3,29 +3,9 @@ import logging
 import numpy as np
 
 from datasets import Dataset, DatasetDict
-from transformers import AutoTokenizer, is_torch_available
+from transformers import is_torch_available
 
-logger = logging.getLogger(__name__) # pylint: disable=invalid-name
-
-# pretrained_model_name = "google/mt5-base"
-pretrained_model_name = "facebook/m2m100_418M"
-
-source_lang = "en"
-target_lang = "ko"
-
-tokenizer = AutoTokenizer.from_pretrained(
-    pretrained_model_name,
-    do_lower_case=True,
-    src_lang = source_lang,
-    tgt_lang = target_lang
-)
-
-model_checkpoint = pretrained_model_name.split("/")[-1]
-
-if model_checkpoint in ["mt5-small", "mt5-base", "mt5-larg", "mt5-3b", "mt5-11b"]:
-    prefix = "translate English to Korean: "
-else:
-    prefix = ""
+logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
 def set_seed(seed: int = 42):
@@ -54,20 +34,13 @@ def load_data(path):
 
 
 def make_dataset(raw):
-    dic = {
-        "transliteration": []
-        }
+    dic = {"transliteration": []}
 
     for idx in range(len(raw)):
         src = raw[idx].split("\t")[0]
         tgt = raw[idx].split("\t")[-1]
-        dic["transliteration"].append(
-            {
-                source_lang: src, 
-                target_lang: tgt
-            }
-        )
-
+        # dic["transliteration"].append({args.src_lang: src, args.tgt_lang: tgt})
+        dic["transliteration"].append({"en": src, "ko": tgt})
     dataset = Dataset.from_dict(dic)
 
     return dataset
@@ -84,41 +57,57 @@ def split_data(data_list, ratio):
     train_dataset = make_dataset(ldata)
     validation_dataset = make_dataset(rdata)
 
-    raw = DatasetDict(
-        {
-            "train": train_dataset, 
-            "validation": validation_dataset
-        }
-    )
+    raw = DatasetDict({"train": train_dataset, "validation": validation_dataset})
 
     return raw
 
-def preprocess_batch_for_hf_dataset(dataset, src_lang, tgt_lang):
-    inputs = [prefix + data[src_lang] for data in dataset["transliteration"]]
-    targets = [data[tgt_lang] for data in dataset["transliteration"]]
-    model_inputs = tokenizer(inputs, max_length=32, truncation=True)
+
+def preprocess_batch_for_hf_dataset(dataset, tokenizer, args):
+    if tokenizer in ["mt5-small", "mt5-base", "mt5-large", "mt5-3b", "mt5-11b"]:
+        prefix = "transliterate English to Korean: "
+    else:
+        prefix = ""
+    # print(tokenizer, args.src_lang, args.tgt_lang)
+
+    tokenizer.src_lang = args.src_lang
+    tokenizer.tgt_lang = args.tgt_lang
+
+    inputs = [prefix + data[args.src_lang] for data in dataset["transliteration"]]
+    targets = [data[args.tgt_lang] for data in dataset["transliteration"]]
+    model_inputs = tokenizer(
+        inputs,
+        max_length=args.max_seq_length,
+        truncation=True,
+    )
 
     # Setup the TOKENIZER for targets
     with tokenizer.as_target_tokenizer():
-        labels = tokenizer(targets, max_length=32, truncation=True)
-    
+        labels = tokenizer(
+            targets,
+            max_length=args.max_seq_length,
+            truncation=True,
+        )
+
     model_inputs["labels"] = labels["input_ids"]
     return model_inputs
 
 
-def load_hf_dataset(dataset):
-    dataset = dataset.map(
-        lambda x: preprocess_batch_for_hf_dataset(
-            x,
-            source_lang,
-            target_lang
-        ),
+def load_hf_dataset(data, tokenizer, args):
+    dataset = data.map(
+        lambda x: preprocess_batch_for_hf_dataset(x, tokenizer, args),
         batched=True,
     )
-    
-    return dataset
+
+    dataset.set_format(type="pt", columns=["input_ids", "attention_mask"])
+
+    if isinstance(data, str):
+        # This is not necessarily a train dataset. The datasets library insists on calling it train.
+        return dataset["train"]
+    else:
+        return dataset
 
 
+"""
 def set_logger(args):
     import torch
     if torch.cuda.is_available():
@@ -130,4 +119,4 @@ def set_logger(args):
         logger.addHandler(stream_handler)
     logger.setLevel(logging.INFO)
     logger.info("Training/evaluation parameters %s", args)
-
+"""
