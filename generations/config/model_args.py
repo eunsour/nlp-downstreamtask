@@ -12,15 +12,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
 import sys
+import json
 import logging
+import warnings
+from torch.utils.data import Dataset
 from dataclasses import dataclass, field
 from typing import Optional
 from multiprocessing import cpu_count
 
 from transformers import TrainingArguments
 from transformers.utils import add_start_docstrings
-
 
 logger = logging.getLogger(__name__)
 
@@ -96,7 +99,13 @@ class Seq2SeqTrainingArguments(TrainingArguments):
     process_count: int = field(default_factory=get_default_process_count)
     model_type: Optional[str] = None
     save_best_model: bool = True
-    
+    no_cache: bool = False
+    cache_dir: str = "cache_dir/"
+    use_hf_datasets: bool = True
+    dataset_class: Dataset = None
+    src_lang = "en"
+    tgt_lang = "ko"
+
     def update_from_dict(self, new_values):
         if isinstance(new_values, dict):
             for key, value in new_values.items():
