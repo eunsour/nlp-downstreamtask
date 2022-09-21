@@ -12,11 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os
 import sys
-import json
 import logging
-import warnings
 from torch.utils.data import Dataset
 from dataclasses import dataclass, field
 from typing import Optional
@@ -76,35 +73,35 @@ class Seq2SeqTrainingArguments(TrainingArguments):
 
     
     # customized arguments
-    config: dict = field(default_factory=dict)
-    special_tokens_list: list = field(default_factory=list)
-    dynamic_quantize: Optional[bool] = field(default=False)
-    n_gpu: int = 1
-    should_log: bool = False
-    length_penalty: Optional[int] = 2.0
-    early_stopping: bool = True
-    repetition_penalty: float = 1.0
-    do_sample: bool = False
-    top_k: float = None
-    top_p: float = None
-    silent: bool = False
-    num_return_sequences: int = 1
-    wandb_project: str = None
-    wandb_kwargs: dict = field(default_factory=dict)
-    max_seq_length: int = 128
-    skip_special_tokens: bool = True
     best_model_dir: str = "outputs/best_model"
-    use_multiprocessed_decoding: bool = False
-    multiprocessing_chunksize: Optional[int] = -1
-    process_count: int = field(default_factory=get_default_process_count)
-    model_type: Optional[str] = None
-    save_best_model: bool = True
-    no_cache: bool = False
     cache_dir: str = "cache_dir/"
-    use_hf_datasets: bool = True
+    config: dict = field(default_factory=dict)
     dataset_class: Dataset = None
+    do_sample: bool = False
+    dynamic_quantize: Optional[bool] = field(default=False)
+    early_stopping: bool = True
+    length_penalty: Optional[int] = 2.0
+    max_seq_length: int = 128
+    model_type: Optional[str] = None
+    multiprocessing_chunksize: Optional[int] = -1
+    n_gpu: int = 1
+    no_cache: bool = False
+    num_return_sequences: int = 1
+    process_count: int = field(default_factory=get_default_process_count)
+    repetition_penalty: float = 1.0
+    save_best_model: bool = True
+    should_log: bool = False
+    silent: bool = False
+    skip_special_tokens: bool = True
+    special_tokens_list: list = field(default_factory=list)
     src_lang = "en"
     tgt_lang = "ko"
+    top_k: float = None
+    top_p: float = None
+    use_hf_datasets: bool = True
+    use_multiprocessed_decoding: bool = False
+    wandb_kwargs: dict = field(default_factory=dict)
+    wandb_project: str = None
 
     def update_from_dict(self, new_values):
         if isinstance(new_values, dict):
@@ -112,3 +109,4 @@ class Seq2SeqTrainingArguments(TrainingArguments):
                 setattr(self, key, value)
         else:
             raise (TypeError(f"{new_values} is not a Python dict."))
+            
