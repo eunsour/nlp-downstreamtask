@@ -98,13 +98,13 @@ def load_hf_dataset(data, tokenizer, args):
         batched=True,
     )
 
-    dataset.set_format(type="pt", columns=["input_ids", "attention_mask"])
+    # dataset.set_format(type="pt", columns=["input_ids", "attention_mask"])
 
-    if isinstance(data, str):
-        # This is not necessarily a train dataset. The datasets library insists on calling it train.
-        return dataset["train"]
-    else:
-        return dataset
+    # if isinstance(data, str):
+    #     # This is not necessarily a train dataset. The datasets library insists on calling it train.
+    #     return dataset["train"]
+    # else:
+    return dataset
 
 
 """

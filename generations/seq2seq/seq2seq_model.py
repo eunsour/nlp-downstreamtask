@@ -13,8 +13,8 @@ from transformers import (
     BartForConditionalGeneration,
     MBartConfig,
     MBartForConditionalGeneration,
-    M2M100Config, 
-    M2M100ForConditionalGeneration, 
+    M2M100Config,
+    M2M100ForConditionalGeneration,
     T5Config,
     T5ForConditionalGeneration,
     T5Tokenizer,
@@ -24,7 +24,7 @@ from transformers import (
     DataCollatorForSeq2Seq,
     Seq2SeqTrainer,
     Seq2SeqTrainingArguments,
-    AutoModelForSeq2SeqLM
+    AutoModelForSeq2SeqLM,
 )
 
 from generations.seq2seq.seq2seq_util import *
@@ -33,12 +33,6 @@ from generations.config.model_args import Seq2SeqTrainingArguments
 
 from tqdm.auto import tqdm
 from multiprocessing import Pool
-
-model_checkpoint = "facebook/m2m100_418M"
-# pretrained_model_path = "./best_model"
-
-source_lang = "en"
-target_lang = "ko"
 
 
 try:
@@ -56,7 +50,7 @@ MODEL_CLASSES = {
     "mbart": (MBartConfig, MBartForConditionalGeneration),
     "t5": (T5Config, T5ForConditionalGeneration),
     "mt5": (MT5Config, MT5ForConditionalGeneration),
-    "m2m": (M2M100Config, M2M100ForConditionalGeneration)
+    "m2m": (M2M100Config, M2M100ForConditionalGeneration),
 }
 
 
@@ -91,11 +85,8 @@ class Seq2SeqModel:
             **kwargs (optional): For providing proxies, force_download, resume_download, cache_dir and other options specific to the 'from_pretrained' implementation where this will be supplied.
         """  # noqa: ignore flake8"
 
-        # self.args = self._load_model_args(model_name)
-
         if isinstance(args, dict):
             self.args.update_from_dict(args)
-            # update_from_dict(args)
         elif isinstance(args, Seq2SeqTrainingArguments):
             self.args = args
 
@@ -140,19 +131,22 @@ class Seq2SeqModel:
             self.config = config_class.from_pretrained(model_name, **self.args.config)
             self.model = model_class.from_pretrained(model_name, config=self.config)
 
-
         if isinstance(tokenizer, T5Tokenizer):
             self.tokenizer = tokenizer
             self.model.resize_token_embeddings(len(self.tokenizer))
         else:
-            self.tokenizer = AutoTokenizer.from_pretrained(model_name, truncate=True)
-
+            self.tokenizer = AutoTokenizer.from_pretrained(
+                model_name,
+                truncate=True,
+                do_lower_case=True,
+                src_lang=args.src_lang,
+                tgt_lang=args.tgt_lang,
+            )
 
         if self.args.dynamic_quantize:
             self.model = torch.quantization.quantize_dynamic(
                 self.model, {torch.nn.Linear}, dtype=torch.qint8
             )
-
 
         if self.args.special_tokens_list:
             self.tokenizer.add_tokens(
@@ -175,7 +169,6 @@ class Seq2SeqModel:
             )
             self.args.wandb_project = None
 
-
     def train_model(
         self,
         train_data,
@@ -185,7 +178,7 @@ class Seq2SeqModel:
         eval_data=None,
         verbose=True,
         **kwargs,
-        ):
+    ):
 
         if args:
             self.args.update_from_dict(args)
@@ -207,6 +200,7 @@ class Seq2SeqModel:
 
         model = self.model
         self._move_model_to_device()
+        train_dataset = self.load_and_cache_examples(train_data, verbose=verbose)
 
         if args.wandb_project:
             wandb.init(
@@ -220,21 +214,19 @@ class Seq2SeqModel:
 
         if args.n_gpu > 1:
             model = torch.nn.DataParallel(model)
-            
+
         self.data_collator = DataCollatorForSeq2Seq(self.tokenizer, model=model)
-        
+
         self.trainer = Seq2SeqTrainer(
             model,
             self.args,
-            tokenizer=tokenizer,
+            tokenizer=self.tokenizer,
             data_collator=self.data_collator,
-            train_dataset=train_data,
-            eval_dataset=eval_data,
-            callbacks=[EarlyStoppingCallback(3, 0.0)]
+            train_dataset=train_dataset["train"],
+            eval_dataset=train_dataset["validation"],
         )
 
         self.trainer.train()
-
 
     # def use_pretrained_model(self):
     #     self.model = AutoModelForSeq2SeqLM.from_pretrained(
@@ -250,7 +242,7 @@ class Seq2SeqModel:
         self.trainer = Seq2SeqTrainer(
             model,
             self.args,
-            tokenizer=tokenizer,
+            tokenizer=self.tokenizer,
             data_collator=self.data_collator,
             eval_dataset=eval_data,
         )
@@ -270,7 +262,7 @@ class Seq2SeqModel:
 
         self._move_model_to_device()
         # self.use_pretrained_model()
-        
+
         all_outputs = []
 
         # Batching
@@ -281,7 +273,7 @@ class Seq2SeqModel:
             ],
             desc="Generating outputs",
             disable=self.args.silent,
-        ):  
+        ):
             input_batch = self.tokenizer.prepare_seq2seq_batch(
                 src_texts=batch,
                 max_length=self.args.generation_max_length,
@@ -289,13 +281,13 @@ class Seq2SeqModel:
                 return_tensors="pt",
                 truncation=True,
             )
-            
+
             input_ids = input_batch["input_ids"]
             attention_mask = input_batch["attention_mask"]
 
             input_ids = input_ids.to(self.device)
             attention_mask = attention_mask.to(self.device)
-            
+
             if self.args.model_type in ["t5", "mt5"]:
                 outputs = self.model.generate(
                     input_ids=input_ids,
@@ -304,29 +296,28 @@ class Seq2SeqModel:
                     # length_penalty=self.args.length_penalty,
                     # early_stopping=self.args.early_stopping,
                     # repetition_penalty=self.args.repetition_penalty,
-                    # do_sample=self.args.do_sample,
-                    # top_k=self.args.top_k,
-                    # top_p=self.args.top_p,
-                    # num_return_sequences=self.args.num_return_sequences,
+                    do_sample=self.args.do_sample,
+                    top_k=self.args.top_k,
+                    top_p=self.args.top_p,
+                    num_return_sequences=self.args.num_return_sequences,
                 )
 
             else:
                 outputs = self.model.generate(
                     input_ids=input_ids,
-                    # num_beams=self.args.generation_num_beams,
+                    num_beams=self.args.generation_num_beams,
                     max_length=self.args.generation_max_length,
                     # length_penalty=self.args.length_penalty,
                     # early_stopping=self.args.early_stopping,
                     # repetition_penalty=self.args.repetition_penalty,
-                    # do_sample=self.args.do_sample,
-                    # top_k=self.args.top_k,
-                    # top_p=self.args.top_p,
-                    # num_return_sequences=self.args.num_return_sequences,
+                    do_sample=self.args.do_sample,
+                    top_k=self.args.top_k,
+                    top_p=self.args.top_p,
+                    num_return_sequences=self.args.num_return_sequences,
                 )
 
             all_outputs.extend(outputs.cpu().numpy())
-            
-       
+
         if self.args.use_multiprocessed_decoding:
             if self.args.multiprocessing_chunksize == -1:
                 chunksize = max(len(all_outputs) // (self.args.process_count * 2), 500)
@@ -346,7 +337,7 @@ class Seq2SeqModel:
             self._move_model_to_device()
 
         else:
-            outputs = [ 
+            outputs = [
                 self.tokenizer.decode(
                     output_id,
                     skip_special_tokens=self.args.skip_special_tokens,
@@ -365,7 +356,7 @@ class Seq2SeqModel:
 
     def _move_model_to_device(self):
         self.model.to(self.device)
-        
+
     def _decode(self, output_id):
         return self.tokenizer.decode(
             output_id,
@@ -373,12 +364,46 @@ class Seq2SeqModel:
             clean_up_tokenization_spaces=True,
         )
 
+    def load_and_cache_examples(
+        self, data, evaluate=False, no_cache=False, verbose=True, silent=False
+    ):
+        """
+        Creates a Seq2SeqDataset from data.
+
+        Utility function for train() and eval() methods. Not intended to be used directly.
+        """
+
+        tokenizer = self.tokenizer
+        args = self.args
+
+        if not no_cache:
+            no_cache = args.no_cache
+
+        if not no_cache:
+            os.makedirs(self.args.cache_dir, exist_ok=True)
+
+        mode = "dev" if evaluate else "train"
+
+        if self.args.use_hf_datasets:
+            dataset = load_hf_dataset(data, tokenizer, self.args)
+            return dataset
+        elif args.dataset_class:
+            CustomDataset = args.dataset_class
+            return CustomDataset(tokenizer, args, data, mode)
+        else:
+            return
+            # return load_hf_dataset(
+            #     tokenizer,
+            #     self.args,
+            #     data,
+            #     mode,
+            # )
+
     # def save_model_args(self, output_dir):
     #     os.makedirs(output_dir, exist_ok=True)
     #     self.args.save(output_dir)
 
-    def _load_model_args(self):
+    def _load_model_args(self, input_dir):
         args = Seq2SeqTrainingArguments()
-        # args.load(input_dir)
+        args.load(input_dir)
         return args
-    
