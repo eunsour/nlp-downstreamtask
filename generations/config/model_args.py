@@ -12,17 +12,21 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
 import sys
+import json
 import logging
-from torch.utils.data import Dataset
-from dataclasses import dataclass, field
+
 from typing import Optional
 from multiprocessing import cpu_count
+from dataclasses import dataclass, field
 
+from torch.utils.data import Dataset
 from transformers import TrainingArguments
 from transformers.utils import add_start_docstrings
 
 logger = logging.getLogger(__name__)
+
 
 def get_default_process_count():
     process_count = cpu_count() - 2 if cpu_count() > 2 else 1
@@ -31,10 +35,17 @@ def get_default_process_count():
 
     return process_count
 
+
+def get_special_tokens():
+    return ["<s>", "<pad>", "</s>", "<unk>", "<mask>"]
+
+
 @dataclass
 @add_start_docstrings(TrainingArguments.__doc__)
 class Seq2SeqTrainingArguments(TrainingArguments):
     """
+    Model args for a Seq2SeqModel
+
     Args:
         sortish_sampler (`bool`, *optional*, defaults to `False`):
             Whether to use a *sortish sampler* or not. Only possible if the underlying datasets are *Seq2SeqDataset*
@@ -71,8 +82,6 @@ class Seq2SeqTrainingArguments(TrainingArguments):
         },
     )
 
-    
-    # customized arguments
     best_model_dir: str = "outputs/best_model"
     cache_dir: str = "cache_dir/"
     config: dict = field(default_factory=dict)
@@ -80,13 +89,14 @@ class Seq2SeqTrainingArguments(TrainingArguments):
     do_sample: bool = False
     dynamic_quantize: Optional[bool] = field(default=False)
     early_stopping: bool = True
-    length_penalty: Optional[int] = 2.0
+    length_penalty: float = 2.0
     max_seq_length: int = 128
     model_type: Optional[str] = None
     multiprocessing_chunksize: Optional[int] = -1
     n_gpu: int = 1
     no_cache: bool = False
     num_return_sequences: int = 1
+    output_dir: str = "outputs/"
     process_count: int = field(default_factory=get_default_process_count)
     repetition_penalty: float = 1.0
     save_best_model: bool = True
@@ -109,4 +119,12 @@ class Seq2SeqTrainingArguments(TrainingArguments):
                 setattr(self, key, value)
         else:
             raise (TypeError(f"{new_values} is not a Python dict."))
-            
+
+    def load(self, input_dir):
+        if input_dir:
+            model_args_file = os.path.join(input_dir, "model_args.json")
+            if os.path.isfile(model_args_file):
+                with open(model_args_file, "r") as f:
+                    model_args = json.load(f)
+
+                self.update_from_dict(model_args)
