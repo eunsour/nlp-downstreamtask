@@ -1,2 +1,2 @@
-from generations.config.model_args import ClassificationArgs
-from generations.classification.classification_model import ClassificationModel
+from downstreamtask.config.model_args import ClassificationArgs
+from downstreamtask.classification.classification_model import ClassificationModel

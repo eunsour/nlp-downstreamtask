@@ -1,2 +1,2 @@
-from generations.config.model_args import Seq2SeqTrainingArguments
-from generations.seq2seq.seq2seq_model import Seq2SeqModel
+from downstreamtask.config.model_args import Seq2SeqTrainingArguments
+from downstreamtask.seq2seq.seq2seq_model import Seq2SeqModel

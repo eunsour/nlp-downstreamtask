@@ -28,9 +28,9 @@ from transformers import (
     AutoModelForSeq2SeqLM,
 )
 
-from generations.seq2seq.seq2seq_util import *
-from generations.config.utils import sweep_config_to_sweep_values
-from generations.config.model_args import Seq2SeqTrainingArguments
+from downstreamtask.seq2seq.seq2seq_util import *
+from downstreamtask.config.utils import sweep_config_to_sweep_values
+from downstreamtask.config.model_args import Seq2SeqTrainingArguments
 
 from tqdm.auto import tqdm
 from multiprocessing import Pool
