@@ -4,6 +4,7 @@ import logging
 from dataclasses import asdict
 
 import warnings
+
 warnings.filterwarnings("ignore")
 
 from transformers import (
@@ -37,6 +38,7 @@ from multiprocessing import Pool
 
 try:
     import wandb
+
     wandb_available = True
 except ImportError:
     wandb_available = False
@@ -144,14 +146,10 @@ class Seq2SeqModel:
             )
 
         if self.args.dynamic_quantize:
-            self.model = torch.quantization.quantize_dynamic(
-                self.model, {torch.nn.Linear}, dtype=torch.qint8
-            )
+            self.model = torch.quantization.quantize_dynamic(self.model, {torch.nn.Linear}, dtype=torch.qint8)
 
         if self.args.special_tokens_list:
-            self.tokenizer.add_tokens(
-                self.args.special_tokens_list, special_tokens=True
-            )
+            self.tokenizer.add_tokens(self.args.special_tokens_list, special_tokens=True)
             self.model.resize_token_embeddings(len(self.tokenizer))
 
         self.args.model_type = model_type
@@ -161,12 +159,8 @@ class Seq2SeqModel:
         else:
             self.args.model_name = model_name
 
-        print(self.device, model_type, model_name)
-
         if self.args.wandb_project and not wandb_available:
-            warnings.warn(
-                "wandb_project specified but wandb is not available. Wandb disabled."
-            )
+            warnings.warn("wandb_project specified but wandb is not available. Wandb disabled.")
             self.args.wandb_project = None
 
     def train_model(
@@ -188,11 +182,7 @@ class Seq2SeqModel:
         if not output_dir:
             output_dir = self.args.output_dir
 
-        if (
-            os.path.exists(output_dir)
-            and os.listdir(output_dir)
-            and not self.args.overwrite_output_dir
-        ):
+        if os.path.exists(output_dir) and os.listdir(output_dir) and not self.args.overwrite_output_dir:
             raise ValueError(
                 "Output directory ({}) already exists and is not empty."
                 " Set args.overwrite_output_dir = True to overcome.".format(output_dir)
@@ -228,14 +218,7 @@ class Seq2SeqModel:
 
         self.trainer.train()
 
-    # def use_pretrained_model(self):
-    #     self.model = AutoModelForSeq2SeqLM.from_pretrained(
-    #         pretrained_model_path
-    #     )
-
-    def eval_model(
-        self, eval_data, output_dir=None, verbose=True, silent=False, **kwargs
-    ):
+    def eval_model(self, eval_data, output_dir=None, verbose=True, silent=False, **kwargs):
         model = self.model
         self.data_collator = DataCollatorForSeq2Seq(self.tokenizer, model=model)
 
@@ -287,34 +270,19 @@ class Seq2SeqModel:
 
             input_ids = input_ids.to(self.device)
             attention_mask = attention_mask.to(self.device)
-
-            if self.args.model_type in ["t5", "mt5"]:
-                outputs = self.model.generate(
-                    input_ids=input_ids,
-                    num_beams=self.args.generation_num_beams,
-                    max_length=self.args.generation_max_length,
-                    # length_penalty=self.args.length_penalty,
-                    # early_stopping=self.args.early_stopping,
-                    # repetition_penalty=self.args.repetition_penalty,
-                    do_sample=self.args.do_sample,
-                    top_k=self.args.top_k,
-                    top_p=self.args.top_p,
-                    num_return_sequences=self.args.num_return_sequences,
-                )
-
-            else:
-                outputs = self.model.generate(
-                    input_ids=input_ids,
-                    num_beams=self.args.generation_num_beams,
-                    max_length=self.args.generation_max_length,
-                    # length_penalty=self.args.length_penalty,
-                    # early_stopping=self.args.early_stopping,
-                    # repetition_penalty=self.args.repetition_penalty,
-                    do_sample=self.args.do_sample,
-                    top_k=self.args.top_k,
-                    top_p=self.args.top_p,
-                    num_return_sequences=self.args.num_return_sequences,
-                )
+        
+            outputs = self.model.generate(
+                input_ids=input_ids,
+                num_beams=self.args.generation_num_beams,
+                max_length=self.args.generation_max_length,
+                length_penalty=self.args.length_penalty,
+                early_stopping=self.args.early_stopping,
+                repetition_penalty=self.args.repetition_penalty,
+                do_sample=self.args.do_sample,
+                top_k=self.args.top_k,
+                top_p=self.args.top_p,
+                num_return_sequences=self.args.num_return_sequences,
+            )
 
             all_outputs.extend(outputs.cpu().numpy())
 
@@ -364,9 +332,7 @@ class Seq2SeqModel:
             clean_up_tokenization_spaces=True,
         )
 
-    def load_and_cache_examples(
-        self, data, evaluate=False, no_cache=False, verbose=True, silent=False
-    ):
+    def load_and_cache_examples(self, data, evaluate=False, no_cache=False, verbose=True, silent=False):
         """
         Creates a Seq2SeqDataset from data.
 
@@ -390,18 +356,35 @@ class Seq2SeqModel:
         elif args.dataset_class:
             CustomDataset = args.dataset_class
             return CustomDataset(tokenizer, args, data, mode)
-        else:
-            return
-            # return load_hf_dataset(
-            #     tokenizer,
-            #     self.args,
-            #     data,
-            #     mode,
-            # )
 
-    # def save_model_args(self, output_dir):
-    #     os.makedirs(output_dir, exist_ok=True)
-    #     self.args.save(output_dir)
+
+    def save_model(self, output_dir=None, optimizer=None, scheduler=None, model=None, results=None):
+        if not output_dir:
+            output_dir = self.args.output_dir
+        os.makedirs(output_dir, exist_ok=True)
+
+        if model and not self.args.no_save:
+            # Take care of distributed/parallel training
+            model_to_save = model.module if hasattr(model, "module") else model
+            model_to_save.save_pretrained(output_dir)
+            self.tokenizer.save_pretrained(output_dir)
+            torch.save(self.args, os.path.join(output_dir, "training_args.bin"))
+            if optimizer and scheduler and self.args.save_optimizer_and_scheduler:
+                torch.save(optimizer.state_dict(), os.path.join(output_dir, "optimizer.pt"))
+                torch.save(scheduler.state_dict(), os.path.join(output_dir, "scheduler.pt"))
+            self.save_model_args(output_dir)
+
+        if results:
+            output_eval_file = os.path.join(output_dir, "eval_results.txt")
+            with open(output_eval_file, "w") as writer:
+                for key in sorted(results.keys()):
+                    writer.write("{} = {}\n".format(key, str(results[key])))
+
+
+    def save_model_args(self, output_dir):
+        os.makedirs(output_dir, exist_ok=True)
+        self.args.save(output_dir)
+
 
     def _load_model_args(self, input_dir):
         args = Seq2SeqTrainingArguments()

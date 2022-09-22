@@ -20,6 +20,7 @@ def set_seed(seed: int = 42):
     np.random.seed(seed)
     if is_torch_available():
         import torch
+
         torch.manual_seed(seed)
         torch.cuda.manual_seed_all(seed)
 
@@ -63,14 +64,13 @@ def split_data(data_list, ratio):
 
 
 def preprocess_batch_for_hf_dataset(dataset, tokenizer, args):
+    tokenizer.src_lang = args.src_lang
+    tokenizer.tgt_lang = args.tgt_lang
+    
     if tokenizer in ["mt5-small", "mt5-base", "mt5-large", "mt5-3b", "mt5-11b"]:
         prefix = "transliterate English to Korean: "
     else:
         prefix = ""
-    # print(tokenizer, args.src_lang, args.tgt_lang)
-
-    tokenizer.src_lang = args.src_lang
-    tokenizer.tgt_lang = args.tgt_lang
 
     inputs = [prefix + data[args.src_lang] for data in dataset["transliteration"]]
     targets = [data[args.tgt_lang] for data in dataset["transliteration"]]
@@ -98,25 +98,4 @@ def load_hf_dataset(data, tokenizer, args):
         batched=True,
     )
 
-    # dataset.set_format(type="pt", columns=["input_ids", "attention_mask"])
-
-    # if isinstance(data, str):
-    #     # This is not necessarily a train dataset. The datasets library insists on calling it train.
-    #     return dataset["train"]
-    # else:
     return dataset
-
-
-"""
-def set_logger(args):
-    import torch
-    if torch.cuda.is_available():
-        stream_handler = logging.StreamHandler()
-        formatter = logging.Formatter(
-            fmt="%(levelname)s:%(name)s:%(message)s",
-        )
-        stream_handler.setFormatter(formatter)
-        logger.addHandler(stream_handler)
-    logger.setLevel(logging.INFO)
-    logger.info("Training/evaluation parameters %s", args)
-"""
