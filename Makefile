@@ -15,7 +15,7 @@ clean-test:
 	-rm -r wandb
 
 formatter:
-	black --line-length 119 generations tests 
+	black --line-length 119 downstreamtask tests 
 
 types:
 	pytype --keep-going generations --exclude generations/experimental
