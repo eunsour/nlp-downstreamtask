@@ -18,4 +18,5 @@ formatter:
 	black --line-length 119 downstreamtask tests 
 
 types:
-	pytype --keep-going generations --exclude generations/experimental
+	pytype --keep-going downstreamtask --exclude downstreamtask/experimental
+	
