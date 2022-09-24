@@ -97,7 +97,6 @@ class Seq2SeqModel:
             sweep_config = kwargs.pop("sweep_config")
             sweep_values = sweep_config_to_sweep_values(sweep_config)
             self.args.update_from_dict(sweep_values)
-            # update_from_dict(sweep_values)
         else:
             self.is_sweeping = False
 
@@ -198,7 +197,7 @@ class Seq2SeqModel:
                 config={**asdict(args)},
                 **args.wandb_kwargs,
             )
-            wandb.run._label(repo="simpletransformers")
+            wandb.run._label(repo="downstreamtask")
             wandb.watch(self.model)
             self.wandb_run_id = wandb.run.id
 
@@ -270,7 +269,7 @@ class Seq2SeqModel:
 
             input_ids = input_ids.to(self.device)
             attention_mask = attention_mask.to(self.device)
-        
+
             outputs = self.model.generate(
                 input_ids=input_ids,
                 num_beams=self.args.generation_num_beams,
@@ -357,7 +356,6 @@ class Seq2SeqModel:
             CustomDataset = args.dataset_class
             return CustomDataset(tokenizer, args, data, mode)
 
-
     def save_model(self, output_dir=None, optimizer=None, scheduler=None, model=None, results=None):
         if not output_dir:
             output_dir = self.args.output_dir
@@ -380,11 +378,9 @@ class Seq2SeqModel:
                 for key in sorted(results.keys()):
                     writer.write("{} = {}\n".format(key, str(results[key])))
 
-
     def save_model_args(self, output_dir):
         os.makedirs(output_dir, exist_ok=True)
         self.args.save(output_dir)
-
 
     def _load_model_args(self, input_dir):
         args = Seq2SeqTrainingArguments()

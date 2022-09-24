@@ -66,7 +66,7 @@ def split_data(data_list, ratio):
 def preprocess_batch_for_hf_dataset(dataset, tokenizer, args):
     tokenizer.src_lang = args.src_lang
     tokenizer.tgt_lang = args.tgt_lang
-    
+
     if tokenizer in ["mt5-small", "mt5-base", "mt5-large", "mt5-3b", "mt5-11b"]:
         prefix = "transliterate English to Korean: "
     else:
