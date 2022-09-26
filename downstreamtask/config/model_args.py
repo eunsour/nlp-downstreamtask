@@ -42,6 +42,23 @@ def get_special_tokens():
 
 @dataclass
 @add_start_docstrings(TrainingArguments.__doc__)
+class ClassificationArgs(TrainingArguments):
+    """
+    Model args for a ClassificationModel
+    """
+
+    labels_list: list = field(default_factory=list)
+    labels_map: dict = field(default_factory=dict)
+    onnx: bool = False
+    regression: bool = False
+    sliding_window: bool = False
+    special_tokens_list: list = field(default_factory=list)
+    stride: float = 0.8
+    tie_value: int = 1
+
+
+@dataclass
+@add_start_docstrings(TrainingArguments.__doc__)
 class Seq2SeqTrainingArguments(TrainingArguments):
     """
     Model args for a Seq2SeqModel
@@ -65,7 +82,8 @@ class Seq2SeqTrainingArguments(TrainingArguments):
 
     sortish_sampler: bool = field(default=False, metadata={"help": "Whether to use SortishSampler or not."})
     predict_with_generate: bool = field(
-        default=False, metadata={"help": "Whether to use generate to calculate generative metrics (ROUGE, BLEU)."}
+        default=False,
+        metadata={"help": "Whether to use generate to calculate generative metrics (ROUGE, BLEU)."},
     )
     generation_max_length: Optional[int] = field(
         default=None,
@@ -97,6 +115,7 @@ class Seq2SeqTrainingArguments(TrainingArguments):
     no_cache: bool = False
     num_return_sequences: int = 1
     output_dir: str = "outputs/"
+    overwrite_output_dir: bool = False
     process_count: int = field(default_factory=get_default_process_count)
     repetition_penalty: float = 1.0
     save_best_model: bool = True
