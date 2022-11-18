@@ -1,78 +1,63 @@
-# coding=utf-8
-# Copyright 2018 The Google AI Language Team Authors and The HuggingFace Inc. team.
-# Copyright (c) 2018, NVIDIA CORPORATION.  All rights reserved.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
-from __future__ import absolute_import, division, print_function
-
-import csv
-import json
-import logging
-import linecache
-import os
-import sys
-from collections import Counter
-from io import open
-from multiprocessing import Pool, cpu_count
-
-try:
-    from collections import Iterable, Mapping
-except ImportError:
-    from collections.abc import Iterable, Mapping
-
-import torch
-import torch.nn as nn
-from scipy.stats import pearsonr, spearmanr
-from sklearn.metrics import f1_score, matthews_corrcoef
-
-from torch.utils.data import Dataset
 from datasets import load_dataset
 from datasets import Dataset as HFDataset
 
 
-try:
-    import torchvision
-    import torchvision.transforms as transforms
+def load_hf_dataset(data, tokenizer, args, multi_label):
+    # if isinstance(data, str):
+    #     dataset = load_dataset(
+    #         "csv",
+    #         data_files=data,
+    #         delimiter="\t",
+    #         download_mode="force_redownload" if args.reprocess_input_data else "reuse_dataset_if_exists",
+    #     )
+    # else:
+    dataset = data
 
-    torchvision_available = True
-    from PIL import Image
-except ImportError:
-    torchvision_available = False
+    if args.labels_map and not args.regression:
+        dataset = dataset.map(lambda x: map_labels_to_numeric(x, multi_label, args))
+
+    dataset = dataset.map(
+        lambda x: preprocess_batch_for_hf_dataset(x, tokenizer=tokenizer, max_seq_length=args.max_seq_length),
+        batched=True,
+    )
+
+    if args.model_type in ["bert", "xlnet", "albert", "layoutlm", "layoutlmv2"]:
+        dataset.set_format(
+            type="pt",
+            columns=["input_ids", "token_type_ids", "attention_mask", "label"],
+        )
+    else:
+        dataset.set_format(type="pt", columns=["input_ids", "attention_mask", "label"])
+
+    if isinstance(data, str):
+        # This is not necessarily a train dataset. The datasets library insists on calling it train.
+        return dataset["train"]
+    else:
+        return dataset
 
 
-class InputExample(object):
-    """A single training/test example for simple sequence classification."""
+def preprocess_batch_for_hf_dataset(dataset, tokenizer, max_seq_length):
+    if "text_b" in dataset:
+        return tokenizer(
+            text=dataset["text_a"],
+            text_pair=dataset["text_b"],
+            truncation=True,
+            padding="max_length",
+            max_length=max_seq_length,
+        )
+    else:
+        return tokenizer(
+            text=dataset["document"],
+            truncation=True,
+            padding="max_length",
+            max_length=max_seq_length,
+        )
 
-    def __init__(self, guid, text_a, text_b=None, label=None, x0=None, y0=None, x1=None, y1=None):
-        """
-        Constructs a InputExample.
 
-        Args:
-            guid: Unique id for the example.
-            text_a: string. The untokenized text of the first sequence. For single
-            sequence tasks, only this sequence must be specified.
-            text_b: (Optional) string. The untokenized text of the second sequence.
-            Only must be specified for sequence pair tasks.
-            label: (Optional) string. The label of the example. This should be
-            specified for train and dev examples, but not for test examples.
-        """
+def map_labels_to_numeric(example, multi_label, args):
+    if multi_label:
+        example["label"] = [args.labels_map[label] for label in example["label"]]
+    else:
+        example["label"] = args.labels_map[example["label"]]
 
-        self.guid = guid
-        self.text_a = text_a
-        self.text_b = text_b
-        self.label = label
-        if x0 is None:
-            self.bboxes = None
-        else:
-            self.bboxes = [[a, b, c, d] for a, b, c, d in zip(x0, y0, x1, y1)]
+    return example
