@@ -94,11 +94,8 @@ class ClassificationModel:
         self,
         train_df,
         multi_label=False,
-        output_dir=None,
-        # show_running_loss=True,
         args=None,
         eval_df=None,
-        verbose=True,
         **kwargs,
     ):
 
@@ -110,25 +107,6 @@ class ClassificationModel:
         train_dataset = load_hf_dataset(train_df, self.tokenizer, self.args, multi_label=multi_label)
         eval_dataset = load_hf_dataset(eval_df, self.tokenizer, self.args, multi_label=multi_label)
 
-        # train_sampler = RandomSampler(train_dataset)
-
-        # train_dataloader = DataLoader(
-        #     train_dataset,
-        #     sampler=train_sampler,
-        #     batch_size=self.args.per_device_train_batch_size,
-        #     num_workers=self.args.dataloader_num_workers,
-        # )
-
-        # global_step, training_details = self.train(
-        #     train_dataloader,
-        #     output_dir,
-        #     multi_label=multi_label,
-        #     # show_running_loss=show_running_loss,
-        #     eval_df=eval_df,
-        #     verbose=verbose,
-        #     **kwargs,
-        # )
-
         if args.wandb_project:
             wandb.init(
                 project=args.wandb_project,
@@ -139,49 +117,17 @@ class ClassificationModel:
             wandb.watch(self.model)
             self.wandb_run_id = wandb.run.id
 
-        self.trainer = Trainer(
+        trainer = Trainer(
             model=self.model,
             args=self.args,
             train_dataset=train_dataset,
             eval_dataset=eval_dataset,
-            # compute_metrics=self.compute_metrics
+            compute_metrics=self.compute_metrics,
         )
 
-        self.trainer.train()
-
-        # model_to_save = self.model.module if hasattr(self.model, "module") else self.model
-        # model_to_save.save_pretrained(output_dir)
-        # self.tokenizer.save_pretrained(output_dir)
-        # torch.save(self.args, os.path.join(output_dir, "training_args.bin"))
-        # self.save_model(model=self.model)
-
-        # if verbose:
-        #     logger.info(
-        #         " Training of {} model complete. Saved to {}.".format(
-        #             self.args.model_type, output_dir
-        #         )
-        #     )
-
-    def train(
-        self,
-        train_dataloader,
-        output_dir,
-        multi_label=False,
-        show_running_loss=True,
-        eval_df=None,
-        test_df=None,
-        verbose=True,
-        **kwargs,
-    ):
-        model = self.model
-        args = self.args
-
-        ...
+        trainer.train()
 
     def eval_model():
-        ...
-
-    def evaluate():
         ...
 
     def tune_model():
@@ -191,8 +137,8 @@ class ClassificationModel:
         os.makedirs(output_dir, exist_ok=True)
         self.args.save(output_dir)
 
-    def compute_metrics(pred, labels):
-        labels = labels
+    def compute_metrics(self, pred):
+        labels = pred.label_ids
         preds = pred.predictions.argmax(-1)
         precision, recall, f1, _ = precision_recall_fscore_support(labels, preds, average="macro")
         acc = accuracy_score(labels, preds)

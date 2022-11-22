@@ -29,7 +29,7 @@ def test_sentiment_analysis(model_type, model_name):
         logging_steps=50,
         logging_strategy="steps",
         num_train_epochs=1,
-        output_dir="./nsmcModel",
+        output_dir=f"outputs/{model_name}-finetuned-sentiment-clf",
         per_device_eval_batch_size=16,
         per_device_train_batch_size=16,
         report_to="wandb",
@@ -45,9 +45,3 @@ def test_sentiment_analysis(model_type, model_name):
 
     # Train the model
     model.train_model(train_df=nsmc_train, eval_df=nsmc_test)
-
-
-    # # Evaluate the model
-    # result, model_outputs, wrong_predictions = model.eval_model(eval_df)
-
-    # predictions, raw_outputs = model.predict(["Some arbitary sentence"])
