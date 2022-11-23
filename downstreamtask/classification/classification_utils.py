@@ -1,18 +1,4 @@
-from datasets import load_dataset
-from datasets import Dataset as HFDataset
-
-
-def load_hf_dataset(data, tokenizer, args, multi_label):
-    # if isinstance(data, str):
-    #     dataset = load_dataset(
-    #         "csv",
-    #         data_files=data,
-    #         delimiter="\t",
-    #         download_mode="force_redownload" if args.reprocess_input_data else "reuse_dataset_if_exists",
-    #     )
-    # else:
-    dataset = data
-
+def load_hf_dataset(dataset, tokenizer, args, multi_label):
     if args.labels_map and not args.regression:
         dataset = dataset.map(lambda x: map_labels_to_numeric(x, multi_label, args))
 
@@ -29,7 +15,7 @@ def load_hf_dataset(data, tokenizer, args, multi_label):
     else:
         dataset.set_format(type="pt", columns=["input_ids", "attention_mask", "label"])
 
-    if isinstance(data, str):
+    if isinstance(dataset, str):
         # This is not necessarily a train dataset. The datasets library insists on calling it train.
         return dataset["train"]
     else:

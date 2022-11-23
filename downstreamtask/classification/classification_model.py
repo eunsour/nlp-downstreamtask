@@ -12,13 +12,19 @@ from downstreamtask.classification.classification_utils import (
 )
 
 from transformers import (
-    Trainer,
-    BertConfig,
-    BertForSequenceClassification,
-    BertTokenizerFast,
     AlbertConfig,
     AlbertForSequenceClassification,
     AlbertTokenizer,
+    BertConfig,
+    BertForSequenceClassification,
+    BertTokenizerFast,
+    ElectraConfig,
+    ElectraForSequenceClassification,
+    ElectraTokenizerFast,
+    RobertaConfig,
+    RobertaForSequenceClassification,
+    RobertaTokenizerFast,
+    Trainer,
 )
 
 try:
@@ -44,8 +50,18 @@ class ClassificationModel:
     ):
 
         MODEL_CLASSES = {
-            "bert": (BertConfig, BertForSequenceClassification, BertTokenizerFast),
             "albert": (AlbertConfig, AlbertForSequenceClassification, AlbertTokenizer),
+            "bert": (BertConfig, BertForSequenceClassification, BertTokenizerFast),
+            "electra": (
+                ElectraConfig,
+                ElectraForSequenceClassification,
+                ElectraTokenizerFast,
+            ),
+            "roberta": (
+                RobertaConfig,
+                RobertaForSequenceClassification,
+                RobertaTokenizerFast,
+            ),
         }
 
         if isinstance(args, dict):
@@ -94,8 +110,11 @@ class ClassificationModel:
         self,
         train_df,
         multi_label=False,
+        output_dir=None,
+        # show_running_loss=True,
         args=None,
         eval_df=None,
+        verbose=True,
         **kwargs,
     ):
 
@@ -107,15 +126,39 @@ class ClassificationModel:
         train_dataset = load_hf_dataset(train_df, self.tokenizer, self.args, multi_label=multi_label)
         eval_dataset = load_hf_dataset(eval_df, self.tokenizer, self.args, multi_label=multi_label)
 
+        # train_dataset = RandomSampler(train_dataset)
+        # eval_dataset = RandomSampler(eval_dataset)
+
+        # train_dataloader = DataLoader(
+        #     train_dataset,
+        #     sampler=train_sampler,
+        #     batch_size=self.args.per_device_train_batch_size,
+        #     num_workers=self.args.dataloader_num_workers,
+        # )
+
+        # os.makedirs(output_dir, exist_ok=True)
+
+        # global_step, training_details = self.train(
+        #     train_dataloader,
+        #     output_dir,
+        #     multi_label=multi_label,
+        #     # show_running_loss=show_running_loss,
+        #     eval_df=eval_df,
+        #     verbose=verbose,
+        #     **kwargs,
+        # )
+
         if args.wandb_project:
-            wandb.init(
-                project=args.wandb_project,
-                config={**asdict(args)},
-                **args.wandb_kwargs,
-            )
-            wandb.run._label(repo="downstreamtask")
+            if not wandb.setup().settings.sweep_id:
+                logger.info(" Initializing WandB run for training.")
+                wandb.init(
+                    project=args.wandb_project,
+                    config={**asdict(args)},
+                    **args.wandb_kwargs,
+                )
+                wandb.run._label(repo="downstreamtask")
+                self.wandb_run_id = wandb.run.id
             wandb.watch(self.model)
-            self.wandb_run_id = wandb.run.id
 
         trainer = Trainer(
             model=self.model,
@@ -127,15 +170,42 @@ class ClassificationModel:
 
         trainer.train()
 
-    def eval_model():
+        trainer.evaluate()
+
+        self.save_model_args(args.best_model_dir, trainer, self.tokenizer)
+
+        if verbose:
+            logger.info(" Training of {} model complete. Saved to {}.".format(self.args.model_type, output_dir))
+
+    def save_model_args(self, best_model_dir, trainer, tokenizer):
+        os.makedirs(best_model_dir, exist_ok=True)
+        trainer.save_model(best_model_dir)
+        tokenizer.save_pretrained(best_model_dir)
+
+    def eval_model(self, eval_data, output_dir=None, verbose=True, silent=False, **kwargs):
+        model = self.model
+        # self.data_collator = DataCollatorForSeq2Seq(self.tokenizer, model=model)
+
+        eval_data = load_hf_dataset(eval_data, self.tokenizer, self.args, multi_label=False)
+
+        self.trainer = Trainer(
+            model,
+            self.args,
+            tokenizer=self.tokenizer,
+            # data_collator=self.data_collator,
+            eval_dataset=eval_data,
+        )
+
+        self.trainer.evaluate()
+
+    def evaluate():
         ...
 
     def tune_model():
         ...
 
-    def save_model_args(self, output_dir):
-        os.makedirs(output_dir, exist_ok=True)
-        self.args.save(output_dir)
+    def predict(self, to_predict, multi_label=False):
+        ...
 
     def compute_metrics(self, pred):
         labels = pred.label_ids
