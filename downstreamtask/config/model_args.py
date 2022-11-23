@@ -47,14 +47,30 @@ class ClassificationArgs(TrainingArguments):
     Model args for a ClassificationModel
     """
 
-    labels_list: list = field(default_factory=list)
+    best_model_dir: str = "outputs/best_model"
     labels_map: dict = field(default_factory=dict)
-    onnx: bool = False
-    regression: bool = False
-    sliding_window: bool = False
-    special_tokens_list: list = field(default_factory=list)
-    stride: float = 0.8
-    tie_value: int = 1
+    max_seq_length: int = 128
+    model_name: str = None
+    model_type: str = None
+    process_count: int = field(default_factory=get_default_process_count)
+    wandb_kwargs: dict = field(default_factory=dict)
+    wandb_project: str = None
+
+    def update_from_dict(self, new_values):
+        if isinstance(new_values, dict):
+            for key, value in new_values.items():
+                setattr(self, key, value)
+        else:
+            raise (TypeError(f"{new_values} is not a Python dict."))
+
+    def load(self, input_dir):
+        if input_dir:
+            model_args_file = os.path.join(input_dir, "model_args.json")
+            if os.path.isfile(model_args_file):
+                with open(model_args_file, "r") as f:
+                    model_args = json.load(f)
+
+                self.update_from_dict(model_args)
 
 
 @dataclass
