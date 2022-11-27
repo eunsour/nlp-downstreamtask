@@ -2,14 +2,16 @@ import os
 import wandb
 import torch
 import logging
+import warnings
+import numpy as np
 
 from dataclasses import asdict
 from sklearn.metrics import accuracy_score, precision_recall_fscore_support
 from torch.utils.data import DataLoader, RandomSampler
+
+from downstreamtask.config.utils import sweep_config_to_sweep_values
 from downstreamtask.config.model_args import ClassificationArgs
-from downstreamtask.classification.classification_utils import (
-    load_hf_dataset,
-)
+from downstreamtask.classification.classification_utils import load_hf_dataset, ClassificationDataset
 
 from transformers import (
     AlbertConfig,
@@ -47,6 +49,7 @@ class ClassificationModel:
         # sliding_window=False,
         args=None,
         use_cuda=True,
+        **kwargs,
     ):
 
         MODEL_CLASSES = {
@@ -69,6 +72,14 @@ class ClassificationModel:
         elif isinstance(args, ClassificationArgs):
             self.args = args
 
+        if "sweep_config" in kwargs:
+            self.is_sweeping = True
+            sweep_config = kwargs.pop("sweep_config")
+            sweep_values = sweep_config_to_sweep_values(sweep_config)
+            self.args.update_from_dict(sweep_values)
+        else:
+            self.is_sweeping = False
+
         config_class, model_class, tokenizer_class = MODEL_CLASSES[model_type]
 
         if num_labels:
@@ -82,6 +93,10 @@ class ClassificationModel:
         self.num_labels = num_labels
         self.weight = weight
         # self.sliding_window = sliding_window
+
+        # self.tokenizer = tokenizer_class.from_pretrained(
+        #     tokenizer_name, do_lower_case=self.args.do_lower_case, **kwargs
+        # )
 
         if use_cuda:
             if torch.cuda.is_available():
@@ -103,8 +118,17 @@ class ClassificationModel:
         else:
             self.model = model_class.from_pretrained(model_name, config=self.config)
 
+        self.args.model_name = model_name
+        self.args.model_type = model_type
+
         if not use_cuda:
             self.args["fp16"] = False
+
+        if self.args.wandb_project and not wandb_available:
+            warnings.warn(
+                "wandb_project specified but wandb is not available. Wandb disabled."
+            )
+            self.args.wandb_project = None
 
     def train_model(
         self,
@@ -123,8 +147,39 @@ class ClassificationModel:
         else:
             args = self.args
 
-        train_dataset = load_hf_dataset(train_df, self.tokenizer, self.args, multi_label=multi_label)
-        eval_dataset = load_hf_dataset(eval_df, self.tokenizer, self.args, multi_label=multi_label)
+        if not output_dir:
+            output_dir = self.args.output_dir
+
+        if os.path.exists(output_dir) and os.listdir(output_dir) and not self.args.overwrite_output_dir:
+            raise ValueError(
+                "Output directory ({}) already exists and is not empty."
+                " Set overwrite_output_dir: True to automatically overwrite.".format(output_dir)
+            )
+
+        if args.wandb_project:
+            if not wandb.setup().settings.sweep_id:
+                logger.info(" Initializing WandB run for training.")
+                wandb.init(
+                    project=args.wandb_project,
+                    config={**asdict(args)},
+                    **args.wandb_kwargs,
+                )
+                wandb.run._label(repo="downstreamtask")
+                self.wandb_run_id = wandb.run.id
+            wandb.watch(self.model)
+
+        if self.args.use_hf_datasets:
+            train_dataset = load_hf_dataset(train_df, self.tokenizer, self.args, multi_label=multi_label)
+
+        else:
+            warnings.warn(
+                "Dataframe headers not specified. Falling back to using column 0 as text and column 1 as labels."
+            )
+            train_examples = (
+                train_df.iloc[:, 0].astype(str).tolist(),
+                train_df.iloc[:, 1].tolist(),
+            )
+            train_dataset = self.load_and_cache_examples(train_examples, verbose=verbose)
 
         # train_dataset = RandomSampler(train_dataset)
         # eval_dataset = RandomSampler(eval_dataset)
@@ -148,23 +203,11 @@ class ClassificationModel:
         #     **kwargs,
         # )
 
-        if args.wandb_project:
-            if not wandb.setup().settings.sweep_id:
-                logger.info(" Initializing WandB run for training.")
-                wandb.init(
-                    project=args.wandb_project,
-                    config={**asdict(args)},
-                    **args.wandb_kwargs,
-                )
-                wandb.run._label(repo="downstreamtask")
-                self.wandb_run_id = wandb.run.id
-            wandb.watch(self.model)
-
         trainer = Trainer(
             model=self.model,
             args=self.args,
             train_dataset=train_dataset,
-            eval_dataset=eval_dataset,
+            # eval_dataset=eval_dataset,
             compute_metrics=self.compute_metrics,
         )
 
@@ -176,6 +219,45 @@ class ClassificationModel:
 
         if verbose:
             logger.info(" Training of {} model complete. Saved to {}.".format(self.args.model_type, output_dir))
+
+        return trainer
+
+    def load_and_cache_examples(
+        self,
+        examples,
+        evaluate=False,
+        no_cache=False,
+        multi_label=False,
+        verbose=True,
+        silent=False,
+    ):
+        """
+        Converts a list of InputExample objects to a TensorDataset containing InputFeatures. Caches the InputFeatures.
+
+        Utility function for train() and eval() methods. Not intended to be used directly.
+        """
+
+        tokenizer = self.tokenizer
+        args = self.args
+
+        if not multi_label and args.regression:
+            output_mode = "regression"
+        else:
+            output_mode = "classification"
+
+        mode = "dev" if evaluate else "train"
+
+        dataset = ClassificationDataset(
+            examples,
+            self.tokenizer,
+            self.args,
+            mode=mode,
+            multi_label=multi_label,
+            output_mode=output_mode,
+            no_cache=no_cache,
+        )
+
+        return dataset
 
     def save_model_args(self, best_model_dir, trainer, tokenizer):
         os.makedirs(best_model_dir, exist_ok=True)
@@ -205,7 +287,72 @@ class ClassificationModel:
         ...
 
     def predict(self, to_predict, multi_label=False):
-        ...
+        model = self.model
+        args = self.args
+
+        eval_loss = 0.0
+        nb_eval_steps = 0
+        preds = np.empty((len(to_predict), self.num_labels))
+
+        if multi_label:
+            out_label_ids = np.empty((len(to_predict), self.num_labels))
+        else:
+            out_label_ids = np.empty((len(to_predict)))
+
+        if not multi_label and self.args.onnx:
+            model_inputs = self.tokenizer.batch_encode_plus(
+                to_predict, return_tensors="pt", padding=True, truncation=True
+            )
+
+            if self.args.model_type in [
+                "bert",
+                "xlnet",
+                "albert",
+                "layoutlm",
+                "layoutlmv2",
+            ]:
+                for i, (input_ids, attention_mask, token_type_ids) in enumerate(
+                    zip(
+                        model_inputs["input_ids"],
+                        model_inputs["attention_mask"],
+                        model_inputs["token_type_ids"],
+                    )
+                ):
+                    input_ids = input_ids.unsqueeze(0).detach().cpu().numpy()
+                    attention_mask = attention_mask.unsqueeze(0).detach().cpu().numpy()
+                    token_type_ids = token_type_ids.unsqueeze(0).detach().cpu().numpy()
+                    inputs_onnx = {
+                        "input_ids": input_ids,
+                        "attention_mask": attention_mask,
+                        "token_type_ids": token_type_ids,
+                    }
+
+                    # Run the model (None = get all the outputs)
+                    output = self.model.run(None, inputs_onnx)
+
+                    preds[i] = output[0]
+
+            else:
+                for i, (input_ids, attention_mask) in enumerate(
+                    zip(model_inputs["input_ids"], model_inputs["attention_mask"])
+                ):
+                    input_ids = input_ids.unsqueeze(0).detach().cpu().numpy()
+                    attention_mask = attention_mask.unsqueeze(0).detach().cpu().numpy()
+                    inputs_onnx = {
+                        "input_ids": input_ids,
+                        "attention_mask": attention_mask,
+                    }
+
+                    # Run the model (None = get all the outputs)
+                    output = self.model.run(None, inputs_onnx)
+
+                    preds[i] = output[0]
+
+            model_outputs = preds
+            preds = np.argmax(preds, axis=1)
+
+    def _move_model_to_device(self):
+        self.model.to(self.device)
 
     def compute_metrics(self, pred):
         labels = pred.label_ids
