@@ -48,11 +48,20 @@ class ClassificationArgs(TrainingArguments):
     """
 
     best_model_dir: str = "outputs/best_model"
+    cache_dir: str = "cache_dir/"
+    labels_list: list = field(default_factory=list)
+    labels_map: dict = field(default_factory=dict)
     labels_map: dict = field(default_factory=dict)
     max_seq_length: int = 128
+    model_class: str = "ClassificationModel"
     model_name: str = None
     model_type: str = None
+    no_cache: bool = False
+    output_dir: str = "outputs/"
+    overwrite_output_dir: bool = False
     process_count: int = field(default_factory=get_default_process_count)
+    regression: bool = False
+    use_hf_datasets: bool = False
     wandb_kwargs: dict = field(default_factory=dict)
     wandb_project: str = None
 
